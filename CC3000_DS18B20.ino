@@ -63,8 +63,8 @@ Adafruit_CC3000 cc3000 = Adafruit_CC3000(ADAFRUIT_CC3000_CS,
 
 // We get the SSID & Password from memory thanks to SmartConfigCreate!
 
-#define WEBSITE      "www.adafruit.com"
-#define WEBPAGE      "/testwifi/index.html"
+#define WEBSITE      "http://leerubin.net63.net/"
+#define WEBPAGE      "/temp.php?currentTemp=92.3"
 uint32_t ip;
 #define IDLE_TIMEOUT_MS  3000
 
@@ -77,51 +77,89 @@ uint32_t ip;
 void setup(void)
 {
   pinMode(5, OUTPUT);
-  Serial.begin(38400);
-  //digitalWrite(5, HIGH);
-  /* Try to reconnect using the details from SmartConfig          */
-  /* This basically just resets the CC3000, and the auto connect  */
-  /* tries to do it's magic if connections details are found      */
-  
-  /* !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! */
-  /* !!! Note the additional arguments in .begin that tell the   !!! */
-  /* !!! app NOT to deleted previously stored connection details !!! */
-  /* !!! and reconnected using the connection details in memory! !!! */
-  /* !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! */  
-  if (!cc3000.begin(false, true))
-  {
-    if (!cc3000.begin(false)) {
-      //Unable to initialize Module....
-      blink_times (4);
-      while(1);
-    }
-    if (!cc3000.startSmartConfig(false)) {
-      blink_times (3);
-      while(1);
-    }
-  }
+  Serial.begin(115200);
+  Serial.println(F("Hello, CC3000!\n")); 
 
-  /* Round of applause! */
-  Serial.println(F("Reconnected!"));
+  Serial.print("Free RAM: "); Serial.println(getFreeRam(), DEC);
+  
+  /* Initialise the module */
+  Serial.println(F("\nInitializing..."));
+  if (!cc3000.begin())
+  {
+    Serial.println(F("Couldn't begin()! Check your wiring?"));
+    while(1);
+  }
+  
+  // Optional SSID scan
+  // listSSIDResults();
+  
+  /* Optional setting a static IP Address  */
+
+//unsigned long IPAdd[1] = {0x3202A8C0};
+//unsigned long SubNetMask[1] = {0x00FFFFFF};
+//unsigned long dfGW[1] = {0x0102A8C0};
+unsigned long DNSServer[1] = {0x08080808};
+
+
+unsigned long IPAdd[4] = {0x00};
+unsigned long SubNetMask[4] = {0x00};
+unsigned long dfGW[4] = {0x00};
+//unsigned long DNSServer[4] = {0x00};
+
+
+    if (!cc3000.setStaticIPAddress(IPAdd, SubNetMask, dfGW, DNSServer))
+    {
+      Serial.println(F("Failed to set static IP"));
+      while(true);
+    }
+    
+
+/* End setting static IP Address*/
+
+
+  
+  if (!cc3000.connectToAP(WLAN_SSID, WLAN_PASS, WLAN_SECURITY)) {
+    Serial.println(F("Failed!"));
+    while(1);
+  }
+   
+  Serial.println(F("Connected!"));
   
   /* Wait for DHCP to complete */
-  while (!cc3000.checkDHCP()) {
+  Serial.println(F("Request DHCP"));
+  while (!cc3000.checkDHCP())
+  {
     delay(100); // ToDo: Insert a DHCP timeout!
-  }
+  }  
+
+  /* Display the IP address DNS, Gateway, etc. */  
   while (! displayConnectionDetails()) {
     delay(1000);
   }
-  blink_times (2);
-  
+
+  ip = 0;
+  // Try looking up the website's IP address
+  Serial.print(WEBSITE); Serial.print(F(" -> "));
   while (ip == 0) {
     if (! cc3000.getHostByName(WEBSITE, &ip)) {
       Serial.println(F("Couldn't resolve!"));
     }
     delay(500);
   }
+
   cc3000.printIPdotsRev(ip);
   
-    Adafruit_CC3000_Client www = cc3000.connectTCP(ip, 80);
+  // Optional: Do a ping test on the website
+  /*
+  Serial.print(F("\n\rPinging ")); cc3000.printIPdotsRev(ip); Serial.print("...");  
+  replies = cc3000.ping(ip, 5);
+  Serial.print(replies); Serial.println(F(" replies"));
+  */  
+
+  /* Try connecting to the website.
+     Note: HTTP/1.1 protocol is used to keep the server from closing the connection before all data is read.
+  */
+  Adafruit_CC3000_Client www = cc3000.connectTCP(ip, 80);
   if (www.connected()) {
     www.fastrprint(F("GET "));
     www.fastrprint(WEBPAGE);
@@ -148,11 +186,11 @@ void setup(void)
   www.close();
   Serial.println(F("-------------------------------------"));
   
-  
   /* You need to make sure to clean up after yourself or the CC3000 can freak out */
   /* the next time your try to connect ... */
-  Serial.println(F("\nClosing the connection"));
-    cc3000.disconnect();
+  Serial.println(F("\n\nDisconnecting"));
+  cc3000.disconnect();
+  
 }
 
 void loop(void)
@@ -190,47 +228,31 @@ float temp(void) {
   float celsius, fahrenheit;
   
   if ( !ds.search(addr)) {
-    Serial.println("No temp sensor found!");
     ds.reset_search();
-    delay(250);
     return 0;
   }
-
-  // the first ROM byte indicates which chip
-  switch (addr[0]) {
-    case 0x10:
-      type_s = 1;
-      break;
-    case 0x28:
-      type_s = 0;
-      break;
-    case 0x22:
-      type_s = 0;
-      break;
-    default:
-      return 0;
-  }
+  
   ds.reset();
   ds.select(addr);
   ds.write(0x44, 1);        // start conversion, with parasite power on at the end
-  delay(1000);
+  
+  delay(1000);     // maybe 750ms is enough, maybe not
+  // we might do a ds.depower() here, but the reset will take care of it.
+  
   present = ds.reset();
   ds.select(addr);    
   ds.write(0xBE);         // Read Scratchpad
+
   for ( i = 0; i < 9; i++) {           // we need 9 bytes
     data[i] = ds.read();
   }
+
   // Convert the data to actual temperature
   // because the result is a 16 bit signed integer, it should
   // be stored to an "int16_t" type, which is always 16 bits
   // even when compiled on a 32 bit processor.
   int16_t raw = (data[1] << 8) | data[0];
-  if (type_s) {
-    raw = raw << 3; // 9 bit resolution default
-    if (data[7] == 0x10) {
-      // "count remain" gives full 12 bit resolution
-      raw = (raw & 0xFFF0) + 12 - data[6];
-    }
+  if (0) {
   } else {
     byte cfg = (data[4] & 0x60);
     // at lower res, the low bits are undefined, so let's zero them
@@ -241,10 +263,9 @@ float temp(void) {
   }
   celsius = (float)raw / 16.0;
   fahrenheit = celsius * 1.8 + 32.0;
-  ds.reset_search();
   return fahrenheit;
 }
-
+/*
 bool displayConnectionDetails(void)
 {
   uint32_t ipAddress, netmask, gateway, dhcpserv, dnsserv;
@@ -264,3 +285,4 @@ bool displayConnectionDetails(void)
     return true;
   }
 }
+*/
