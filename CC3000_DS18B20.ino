@@ -5,6 +5,8 @@
 #include <SPI.h>
 #include <string.h>
 #include "utility/debug.h"
+#include <stdlib.h>
+#include <EEPROM.h>
 
 OneWire  ds(A5);
 // These are the interrupt and control pins
@@ -19,8 +21,10 @@ Adafruit_CC3000 cc3000 = Adafruit_CC3000(ADAFRUIT_CC3000_CS,
                                          ADAFRUIT_CC3000_IRQ, 
                                          ADAFRUIT_CC3000_VBAT,
                                          SPI_CLOCK_DIV2);
-
-// We get the SSID & Password from memory thanks to SmartConfigCreate!
+#define WLAN_SSID       "OldOfficeNew"           // cannot be longer than 32 characters!
+#define WLAN_PASS       "myPassword"
+// Security can be WLAN_SEC_UNSEC, WLAN_SEC_WEP, WLAN_SEC_WPA or WLAN_SEC_WPA2
+#define WLAN_SECURITY   WLAN_SEC_UNSEC
 
 #define WEBSITE      "leerubin.net63.net"
 #define WEBPAGE      "/temp.php?currentTemp="
@@ -28,6 +32,10 @@ uint32_t ip;
 float lastTemp = 0;
 int completedFirstSubmission = 0;
 #define IDLE_TIMEOUT_MS  3000
+int addr = 0;
+char wifi_name[20];
+char wifi_password[20];
+
 
 void setup(void) {
   pinMode(5, OUTPUT);
@@ -41,19 +49,14 @@ void setup(void) {
 /**************************************************************************/
 void sendTemp(float z)
 {
-  if (!cc3000.begin(false, true))
-  {
-    if (!cc3000.begin(false)) {
-      //Unable to initialize Module....
-      blink_times (4);
-      while(1);
-    }
-    if (!cc3000.startSmartConfig(false)) {
+  if (!cc3000.begin()) {
+    blink_times (4);
+    while(1);
+  }
+    if (!cc3000.connectToAP(WLAN_SSID, WLAN_PASS, WLAN_SECURITY)) {
       blink_times (3);
       while(1);
     }
-  }
-
   /* Round of applause! */
   Serial.println(F("Reconnected!"));
   
@@ -79,14 +82,15 @@ void sendTemp(float z)
     
     //int j = 0;
     //j = (int)z;
-    //String w = String(j);
+    char w[6];
     //Serial.println("*****************");
     //Serial.println(w);
     //dtostrf(z,'2','2',w);
     //sprintf(w, "?currentTemp=%f", z);
+    //Serial.println(w);
     www.fastrprint(F("GET "));
     www.fastrprint(WEBPAGE);
-    //www.fastrprint(j);
+    www.fastrprint("91");
     www.fastrprint(F(" HTTP/1.1\r\n"));
     www.fastrprint(F("Host: ")); www.fastrprint(WEBSITE); www.fastrprint(F("\r\n"));
     www.fastrprint(F("\r\n"));
@@ -217,3 +221,7 @@ bool displayConnectionDetails(void)
     return true;
   }
 }*/
+
+bool ReadEEPROM() {
+  return FALSE;
+}
